@@ -4,9 +4,26 @@
   "description": "A Full Stack AI E-Commerce Website",
   "license": "ISC",
   "author": "Daniyal",
-  "type": "commonjs",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon -r dotenv/config --experimental-json-modules src/index.js"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "prettier": "^3.9.9"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.13",
+    "pg": "^8.23.1",
+    "stripe": "^23.0.0"
   }
 }
