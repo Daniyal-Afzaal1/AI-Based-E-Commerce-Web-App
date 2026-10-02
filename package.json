@@ -1,0 +1,12 @@
+{
+  "name": "e-commerce",
+  "version": "1.0.0",
+  "description": "A Full Stack AI E-Commerce Website",
+  "license": "ISC",
+  "author": "Daniyal",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
