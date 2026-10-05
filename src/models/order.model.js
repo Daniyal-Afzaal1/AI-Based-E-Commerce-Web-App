@@ -1,4 +1,4 @@
-import database from "../db/db.js";
+import {database} from "../db/db.js";
 
 export async function createOrdersTable() {
     try {
