@@ -1,4 +1,6 @@
 import {database} from "../db/db.js"
+import bcrypt from "bcrypt"
+import jwt from "jsonwebtoken"
 
 export async function createUserTable() {
     try {
@@ -22,3 +24,37 @@ export async function createUserTable() {
         process.exit(1);
     }
 }
+
+export const hashPassword = async (password)=>{
+    return await bcrypt.hash(password,10);
+};
+
+export const isPasswordCorrect = async (password, hashedPassword) => {
+    return await bcrypt.compare(password,hashedPassword);
+};
+
+export const generateAccessToken = async (user) => {
+    return jwt.sign(
+        {
+            _id: user.id,
+            email: user.email,
+            name: user.name
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: process.env.ACCESS_TOKEN_EXPIRY
+        }
+    )
+};
+
+export const generateRefreshToken = async (user) => {
+    return jwt.sign(
+        {
+            _id: user.id
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        {
+            expiresIn: REFRESH_TOKEN_EXPIRY
+        }
+    )
+};
