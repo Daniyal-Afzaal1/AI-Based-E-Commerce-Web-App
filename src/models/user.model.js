@@ -1,4 +1,4 @@
-import {database} from "../db/db.js"
+import { database } from "../db/db.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 
@@ -9,11 +9,13 @@ export async function createUserTable() {
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         name VARCHAR(100) NOT NULL CHECK (char_length(name) >=3),
         email VARCHAR(100) UNIQUE NOT NULL,
+        password TEXT NOT NULL,
         role VARCHAR(10) DEFAULT 'User' CHECK (role IN ('User', 'Admin')),
         avatar JSONB DEFAULT NULL,
         reset_password_token TEXT DEFAULT NULL,
         reset_password_expire TIMESTAMP DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        refresh_token TEXT DEFAULT NULL
         );
         `;
 
@@ -25,12 +27,12 @@ export async function createUserTable() {
     }
 }
 
-export const hashPassword = async (password)=>{
-    return await bcrypt.hash(password,10);
+export const hashPassword = async (password) => {
+    return await bcrypt.hash(password, 10);
 };
 
 export const isPasswordCorrect = async (password, hashedPassword) => {
-    return await bcrypt.compare(password,hashedPassword);
+    return await bcrypt.compare(password, hashedPassword);
 };
 
 export const generateAccessToken = async (user) => {
@@ -54,7 +56,7 @@ export const generateRefreshToken = async (user) => {
         },
         process.env.REFRESH_TOKEN_SECRET,
         {
-            expiresIn: REFRESH_TOKEN_EXPIRY
+            expiresIn: process.env.REFRESH_TOKEN_EXPIRY
         }
     )
 };
