@@ -4,11 +4,12 @@ import {
     isPasswordCorrect,
     hashPassword
 }
-    from "user.model.js"
+    from "../models/user.model.js"
 import { ApiError } from "../utils/ApiError.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 import { asyncHandler } from "../utils/asyncHandler.js"
 import { database } from "../db/db.js"
+import { isEmpty, isEmailCorrect } from "../validations/common.validation.js"
 
 
 const generate_Access_And_Refresh_Token = async (user) => {
@@ -16,10 +17,17 @@ const generate_Access_And_Refresh_Token = async (user) => {
         const accessToken = await generateAccessToken(user);
         const refreshToken = await generateRefreshToken(user);
 
-        return {accessToken, refreshToken}
+        await database.query(
+            `UPDATE users
+            SET refresh_token = $1
+            WHERE id = $2`,
+            [refreshToken, user.id]
+        )
+
+        return { accessToken, refreshToken }
 
     } catch (error) {
-                throw new ApiError(500, "Something went wrong while generating access and refresh Tokens");
+        throw new ApiError(500, "Something went wrong while generating access and refresh Tokens");
 
     }
 }
@@ -53,29 +61,96 @@ const registerUser = asyncHandler(async (req, res, next) => {
         VALUES($1,$2,$3)
         RETURNING id, name, email, role, avatar, created_at
         `,
-        [name,email,hashedPassword]
+        [name, email, hashedPassword]
     );
 
     const createdUser = user.rows[0];
 
-    const {accessToken, refreshToken} = await generate_Access_And_Refresh_Token(user);
+    const { accessToken, refreshToken } = await generate_Access_And_Refresh_Token(createdUser);
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
 
     return res
-    .status(201)
-    .cookie("accessToken", accessToken, options)
-    .cookie("refreshToken",refreshToken,options)
-    .json(
-        new ApiResponse(
-            201,
-            {
-                user: createdUser,
-                accessToken,
-                refreshToken
-            },
-            "User registered successfully"
+        .status(201)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(
+                201,
+                {
+                    user: createdUser,
+                    accessToken,
+                    refreshToken
+                },
+                "User registered successfully"
+            )
         )
-    )
 
 })
 
-export {registerUser}
+const loginUser = asyncHandler(async (req, res, next) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        throw new ApiError(400, "Email and passowrd are required");
+    }
+
+    const user = await database.query(
+        `SELECT * from users
+        WHERE email = $1
+        `,
+        [email]
+    );
+
+    if (user.rowCount === 0) {
+        throw new ApiError(404, "User does not exists")
+    }
+
+    const isPasswordMatched = await isPasswordCorrect(password, user.rows[0].password);
+
+    if (!isPasswordMatched) {
+        throw new ApiError(401, "Invalid user credentials")
+    }
+
+    const loggedInUser = user.rows[0];
+
+    const { accessToken, refreshToken } = await generate_Access_And_Refresh_Token(user);
+
+    const { password: _, ...safeUser } = loggedInUser;
+
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
+
+    const accessTokenOptions = {
+        ...options,
+        expires: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000)
+    };
+
+    const refreshTokenOptions = {
+        ...options,
+        expires: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000)
+    };
+
+    res
+        .status(200)
+        .cookie("accessToken", accessToken, accessTokenOptions)
+        .cookie("refreshToken", refreshToken, refreshTokenOptions)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    user: safeUser,
+                    accessToken,
+                    refreshToken
+                },
+                "User loggedIn successfully"
+            )
+        )
+})
+
+export { registerUser, loginUser }
