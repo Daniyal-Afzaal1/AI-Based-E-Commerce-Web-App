@@ -3,13 +3,17 @@ import {
     generateRefreshToken,
     isPasswordCorrect,
     hashPassword
-}
-    from "../models/user.model.js"
+} from "../models/user.model.js"
 import { ApiError } from "../utils/ApiError.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 import { asyncHandler } from "../utils/asyncHandler.js"
 import { database } from "../db/db.js"
 import { isEmpty, isEmailCorrect } from "../validations/common.validation.js"
+import {
+    generateEmailTemplate,
+    generateResetPasswordToken,
+    sendEmail
+} from "../utils/resetPassword.js"
 
 
 const generate_Access_And_Refresh_Token = async (user) => {
@@ -171,17 +175,80 @@ const logoutUser = asyncHandler(async (req, res, next) => {
     );
 
     const options = {
-        httpOnly: true,  
+        httpOnly: true,
         secure: true
     }
 
     res
-    .status(200)
-    .clearCookie("accessToken", options)
-    .clearCookie("refreshToken", options)
-    .json(
-        new ApiResponse(200,{},"user logout successfully")
-    )
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(
+            new ApiResponse(200, {}, "user logout successfully")
+        )
 })
 
-export { registerUser, loginUser, getUser, logoutUser }
+const forgotPassword = asyncHandler(async (req, res, next) => {
+    const { email } = req.body;
+    const { frontendUrl } = req.query;
+
+    const userResult = await database.query(`
+        SELECT * from users
+        WHERE email = $1
+        `,
+        [email]
+    )
+
+    if (userResult.rowCount === 0) {
+        throw new ApiError(404, "User not found with this email.");
+    }
+
+    const user = userResult.rows[0];
+
+    const { hashedToken, resetPasswordExpireTime, resetToken } = generateResetPasswordToken();
+
+    await database.query(`
+        UPDATE users
+        SET reset_password_token = $1,
+        reset_password_expire = to_timestamp($2)
+        WHERE email = $3
+        `,
+        [hashedToken, resetPasswordExpireTime / 1000, email]
+    )
+
+    const resetPasswordUrl = `${frontendUrl}/password/reset/${resetToken}`;
+
+    const message = generateEmailTemplate(resetPasswordUrl);
+
+    try {
+        await sendEmail({
+            email: user.email,
+            subject: "Ecommerce Password Recovery",
+            message
+        })
+
+        res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    {},
+                    `Email send to ${user.email} successfully`
+                )
+            )
+    } catch (error) {
+        await database
+            .query(`
+            UPDATE users
+            SET reset_password_token = NULL,
+            reset_password_expire = NULL
+            WHERE email = $1
+            `,
+                [email]
+            )
+
+        throw new ApiError(500, "Email could not be sent");
+    }
+})
+
+export { registerUser, loginUser, getUser, logoutUser, forgotPassword }
