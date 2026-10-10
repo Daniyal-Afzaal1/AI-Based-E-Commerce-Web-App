@@ -117,7 +117,7 @@ const loginUser = asyncHandler(async (req, res, next) => {
 
     const loggedInUser = user.rows[0];
 
-    const { accessToken, refreshToken } = await generate_Access_And_Refresh_Token(user);
+    const { accessToken, refreshToken } = await generate_Access_And_Refresh_Token(loggedInUser);
 
     const { password: _, ...safeUser } = loggedInUser;
 
@@ -153,4 +153,35 @@ const loginUser = asyncHandler(async (req, res, next) => {
         )
 })
 
-export { registerUser, loginUser }
+const getUser = asyncHandler(async (req, res, next) => {
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(200, req.user, "successfully returned user")
+        )
+})
+
+const logoutUser = asyncHandler(async (req, res, next) => {
+    await database.query(`
+        UPDATE users
+        SET refresh_token = NULL
+        WHERE id = $1
+        `,
+        [req.user.id]
+    );
+
+    const options = {
+        httpOnly: true,  
+        secure: true
+    }
+
+    res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(
+        new ApiResponse(200,{},"user logout successfully")
+    )
+})
+
+export { registerUser, loginUser, getUser, logoutUser }
