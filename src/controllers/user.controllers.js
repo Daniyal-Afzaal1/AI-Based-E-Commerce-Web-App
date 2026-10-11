@@ -14,6 +14,8 @@ import {
     generateResetPasswordToken,
     sendEmail
 } from "../utils/resetPassword.js"
+import crypto from "crypto"
+import { uploadOnCloudinary, delete_from_cloudinary } from "../utils/cloudinary.js"
 
 
 const generate_Access_And_Refresh_Token = async (user) => {
@@ -45,6 +47,10 @@ const registerUser = asyncHandler(async (req, res, next) => {
         if (isEmpty(data[i])) {
             throw new ApiError(400, `${fields[i]} cannot be empty`);
         }
+    }
+
+    if (password.length < 8 || password.length > 16) {
+        throw new ApiError(400, "Password must be  between 8 and 16 characters");
     }
 
     const isAlreadyRegistered = await database.query(
@@ -251,4 +257,218 @@ const forgotPassword = asyncHandler(async (req, res, next) => {
     }
 })
 
-export { registerUser, loginUser, getUser, logoutUser, forgotPassword }
+const resetPassword = asyncHandler(async (req, res, next) => {
+    const { token } = req.params;                        //password reset token hashed is stored while sending the email
+    const { password, confirmPassword } = req.body;
+
+    const resetPasswordToken = crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+
+    const user = await database.query(
+        `SELECT * FROM users
+        WHERE reset_password_token = $1
+        AND reset_password_expire > NOW()
+        `,
+        [resetPasswordToken]
+    )
+
+    if (user.rowCount === 0) {
+        throw new ApiError(400, "Invalid or expired reset token");
+    }
+
+    if (password !== confirmPassword) {
+        throw new ApiError(400, "Passwords donot match");
+    }
+
+    if (password?.length < 8 || password?.length > 16
+        || confirmPassword?.length < 8 || confirmPassword?.length > 16
+    ) {
+        throw new ApiError(400, "Password must be  between 8 and 16 characters");
+    }
+
+    const hashedPassword = await hashPassword(password);
+
+    const updatedUser = await database.query(`
+        UPDATE users
+        SET password = $1,
+        reset_password_token = NULL,
+        reset_password_expire = NULL
+        WHERE id = $2
+        RETURNING id,name,email,role,avatar,created_at
+        `,
+        [hashedPassword, user.rows[0].id]
+    )
+
+    res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                updatedUser.rows[0],
+                "Password reset successfully"
+            )
+        )
+})
+
+const updatePassword = asyncHandler(async (req, res, next) => {
+    const { oldPassword, newPassword, confirmNewPassword } = req.body;
+
+    if (!oldPassword || !newPassword || !confirmNewPassword) {
+        throw new ApiError(400, "Password fields cannot be empty");
+    }
+
+    if (
+        oldPassword.length < 8 || oldPassword.length > 16 ||
+        newPassword.length < 8 || newPassword.length > 16 ||
+        confirmNewPassword.length < 8 || confirmNewPassword.length > 16
+    ) {
+        throw new ApiError(
+            400,
+            "Password must be between 8 and 16 characters"
+        );
+    }
+
+    if (newPassword !== confirmNewPassword) {
+        throw new ApiError(400, "new password and confirm password should match ")
+    }
+
+    const userResult = await database.query(
+        `SELECT id, password FROM users WHERE id = $1`,
+        [req.user.id]
+    );
+
+    if (userResult.rowCount === 0) {
+        throw new ApiError(404, "User not found");
+    }
+
+    const user = userResult.rows[0];
+
+    const is_PasswordCorrect = await isPasswordCorrect(
+        oldPassword,
+        user.password
+    );
+
+    if (!is_PasswordCorrect) {
+        throw new ApiError(400, "Wrong old password");
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+
+    const updatedUser = await database.query(
+        `UPDATE users
+         SET password = $1
+         WHERE id = $2
+         RETURNING id, name, email, role, avatar, created_at`,
+        [hashedPassword, user.id]
+    );
+
+    if (updatedUser.rowCount === 0) {
+        throw new ApiError(500, "Error updating password");
+    }
+
+    res.status(200).json(
+        new ApiResponse(
+            200,
+            updatedUser.rows[0],
+            "Password updated successfully"
+        )
+    );
+});
+
+
+const updateProfile = asyncHandler(async (req, res, next) => {
+    const { name, email } = req.body;
+    const avatarLocalPath = req.file?.path;
+
+    if (!name || !email) {
+        throw new ApiError(400, "Provide all required details");
+    }
+
+    if (name.trim().length === 0 || email.trim().length === 0) {
+        throw new ApiError(400, "Name and email cannot be empty");
+    }
+
+    // Keep the existing avatar unless a new image is uploaded
+    const oldAvatarPublicId = req.user?.avatar?.public_id;
+
+    let avatarResponse;
+
+    if (avatarLocalPath) {
+        avatarResponse = await uploadOnCloudinary(avatarLocalPath);
+
+        if (!avatarResponse?.public_id || !avatarResponse?.secure_url) {
+            throw new ApiError(500, "Avatar upload failed");
+        }
+    }
+
+    let user;
+
+    if (avatarResponse) {
+        const avatarData = {
+            public_id: avatarResponse.public_id,
+            url: avatarResponse.secure_url
+        };
+
+        user = await database.query(
+            `UPDATE users
+            SET name = $1,
+            email = $2,
+            avatar = $3::jsonb
+            WHERE id = $4
+            RETURNING id, name, email, role, avatar, created_at`,
+            [
+                name,
+                email,
+                JSON.stringify(avatarData),
+                req.user.id
+            ]
+        );
+    } else {
+        user = await database.query(
+            `UPDATE users
+            SET name = $1,
+            email = $2
+            WHERE id = $3
+            RETURNING id, name, email, role, avatar, created_at`,
+            [name, email, req.user.id]
+        );
+    }
+
+    if (user.rowCount === 0) {
+        throw new ApiError(404, "User not found");
+    }
+
+    // Delete the old image only after the database update succeeds
+    if (avatarResponse && oldAvatarPublicId) {
+        try {
+            await delete_from_cloudinary(oldAvatarPublicId);
+        } catch (error) {
+            // Profile update succeeded; old image cleanup can be retried.
+            console.log("error deleting the image: ", req.user.avatar.url);
+        }
+    }
+
+    res.status(200).json(
+        new ApiResponse(
+            200,
+            user.rows[0],
+            "Profile updated successfully"
+        )
+    );
+});
+
+
+
+
+export {
+    registerUser,
+    loginUser,
+    getUser,
+    logoutUser,
+    forgotPassword,
+    resetPassword,
+    updatePassword,
+    updateProfile
+}
