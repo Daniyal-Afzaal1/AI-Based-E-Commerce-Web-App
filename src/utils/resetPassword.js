@@ -30,7 +30,7 @@ reset your password. Please click the button below to proceed:</p>
 style="display: inline-block; font-size: 16px;
 font-weight: bold; color: #000; text-decoration: none; padding: 12px
 20px; border: 1px solid #fff; border-radius: 5px; background-color:
-#fff;">
+#fff; cursor: pointer">
 Reset Password
 </a>
 </div>
