@@ -7,7 +7,8 @@ import {
     forgotPassword,
     resetPassword,
     updatePassword,
-    updateProfile
+    updateProfile,
+    refreshAccessToken
 } from "../controllers/user.controllers.js"
 import { upload } from "../middlewares/multer.middleware.js"
 import { verifyJWT, authorizedRoles } from "../middlewares/auth.middleware.js";
@@ -26,5 +27,7 @@ router.route("/password/forgot").post(forgotPassword);
 router.route("/password/reset/:token").patch(resetPassword);
 router.route("/password/update").patch(verifyJWT,updatePassword);
 router.route("/profile/update").patch(verifyJWT,upload.single("avatar"), updateProfile);
+router.route("/refresh-token").post(refreshAccessToken);
+
 
 export default router;

@@ -16,6 +16,7 @@ import {
 } from "../utils/resetPassword.js"
 import crypto from "crypto"
 import { uploadOnCloudinary, delete_from_cloudinary } from "../utils/cloudinary.js"
+import jwt from "jsonwebtoken"
 
 
 const generate_Access_And_Refresh_Token = async (user) => {
@@ -459,7 +460,45 @@ const updateProfile = asyncHandler(async (req, res, next) => {
     );
 });
 
+const refreshAccessToken = asyncHandler(async (req, res, next) => {
+    const incomingRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
+    let decoded_Token;
+    try {
+        decoded_Token = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET);
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid refresh token");
+    }
+
+
+    const user = await database.query(`
+        SELECT * 
+        FROM users
+        WHERE id = $1
+        `,
+        [decoded_Token?._id]
+    );
+
+    if(incomingRefreshToken !== user?.rows[0]?.refresh_token){
+        throw new ApiError(401, "Invalid refresh token");
+    }
+
+    const {accessToken, refreshToken} = await generate_Access_And_Refresh_Token(user);
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    };
+
+    return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(200, {accessToken, refreshToken}, "access token refreshed")
+    )
+
+});
 
 
 export {
@@ -470,5 +509,6 @@ export {
     forgotPassword,
     resetPassword,
     updatePassword,
-    updateProfile
+    updateProfile,
+    refreshAccessToken
 }
