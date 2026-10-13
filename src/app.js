@@ -26,4 +26,7 @@ app.use(errorMiddleware);
 import userRouter from "./routes/user.routes.js"
 app.use("/api/v1/users", userRouter);
 
+import productRouter from "./routes/products.routes.js"
+app.use("/api/v1/products", productRouter);
+
 export {app}
